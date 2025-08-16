@@ -47,5 +47,5 @@ WORKDIR /app/backend
 # Expose port (Railway will set the PORT env var)
 EXPOSE $PORT
 
-# Use Railway's PORT environment variable
-CMD sh -c "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"
+# Use Railway's PORT environment variable with logging
+CMD sh -c "echo 'Starting on port:' ${PORT:-8000} && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --log-level info"

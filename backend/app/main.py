@@ -20,11 +20,10 @@ if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")
 
 
-# Simple health check endpoint for Railway
+# Health check endpoints for Railway
 @app.get("/health")
 async def health_check():
-    return JSONResponse(content={"status": "ok"}, status_code=200)
-
+    return {"status": "ok", "service": "cv-adapter"}
 
 def _read_index_html() -> Optional[str]:
     index_path = STATIC_DIR / "index.html"
