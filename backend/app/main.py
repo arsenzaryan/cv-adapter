@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import router as api_router
@@ -18,6 +18,12 @@ app.include_router(api_router, prefix="/api")
 # Serve static frontend assets under /static
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")
+
+
+# Simple health check endpoint for Railway
+@app.get("/health")
+async def health_check():
+    return JSONResponse(content={"status": "ok"}, status_code=200)
 
 
 def _read_index_html() -> Optional[str]:
