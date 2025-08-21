@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { adaptResumeUpload, adaptResume, generatePdf } from './api'
+import { adaptResumeUpload, adaptResume, generatePdf, fetchMe, loginWithGoogle, logout } from './api'
 
 type ParsedBlock = {
   type: 'heading' | 'subheading' | 'meta' | 'paragraph' | 'list'
@@ -104,6 +104,7 @@ export default function App() {
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
   const [view, setView] = useState<'formatted' | 'plain'>('formatted')
+  const [me, setMe] = useState<{ authenticated: boolean; email?: string; name?: string; picture?: string }>({ authenticated: false })
 
   const plainRef = useRef<HTMLTextAreaElement | null>(null)
   const autosizePlain = () => {
@@ -115,6 +116,10 @@ export default function App() {
   useEffect(() => {
     if (view === 'plain') autosizePlain()
   }, [result, view])
+
+  useEffect(() => {
+    fetchMe().then(setMe).catch(() => setMe({ authenticated: false }))
+  }, [])
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -215,6 +220,25 @@ export default function App() {
 
   return (
     <div className="app-container">
+      <div className="page-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        <div style={{ fontWeight: 800 }}>CV Adapter</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {me.authenticated ? (
+            <>
+              <span className="badge">Premium model enabled</span>
+              {me.picture ? <img src={me.picture} alt="avatar" style={{ width: 24, height: 24, borderRadius: 999 }} /> : null}
+              <span style={{ fontSize: 13, color: '#334155' }}>{me.name || me.email}</span>
+              <button className="btn-secondary" onClick={async () => { await logout(); setMe({ authenticated: false }); }}>Logout</button>
+            </>
+          ) : (
+            <>
+              <button className="btn" onClick={() => loginWithGoogle()}>Sign up / Log in</button>
+              <span className="badge">Login to access a better AI model (free)</span>
+            </>
+          )}
+        </div>
+      </div>
+
       <section className="hero">
         <h1 className="page-title">Adapt your CV for every opportunity</h1>
         <p className="lead">Make your experience resonate with each role. Paste the job description and we’ll refocus your CV to highlight what matters most—clearly, concisely, and ATS-friendly.</p>

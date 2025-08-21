@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from fastapi import UploadFile, File, Form, HTTPException
+from fastapi import UploadFile, File, Form, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from app.core.llm import adapt_resume
@@ -16,17 +16,19 @@ def healthcheck() -> HealthResponse:
 
 
 @router.post("/adapt", response_model=AdaptResponse)
-def adapt(request: AdaptRequest) -> AdaptResponse:
+def adapt(payload: AdaptRequest, req: Request) -> AdaptResponse:
     adapted = adapt_resume(
-        resume_text=request.resume_text,
-        job_description=request.job_description,
-        strategy=request.strategy,
+        resume_text=payload.resume_text,
+        job_description=payload.job_description,
+        strategy=payload.strategy,
+        request=req,
     )
     return AdaptResponse(adapted_resume=adapted)
 
 
 @router.post("/adapt-upload", response_model=AdaptResponse)
 async def adapt_upload(
+    request: Request,
     file: UploadFile = File(..., description="PDF resume file"),
     job_description: str = Form(..., description="Target job description text"),
     strategy: str | None = Form(default=None, description="Optional strategy hint"),
@@ -47,6 +49,7 @@ async def adapt_upload(
         resume_text=resume_text,
         job_description=job_description,
         strategy=strategy,
+        request=request,
     )
     return AdaptResponse(adapted_resume=adapted)
 

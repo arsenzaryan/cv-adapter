@@ -1,27 +1,80 @@
 from __future__ import annotations
 
 import os
-from typing import Optional
+from typing import Optional, Tuple
 
 from openai import OpenAI
+from starlette.requests import Request
 
 from app.core.config import settings
 
 
-def _get_openai_client() -> OpenAI:
+def _select_credentials(request: Optional[Request]) -> Tuple[str, str]:
+    # Always use the same API key; switch model if authenticated
     api_key = settings.openai_api_key or os.environ.get("OPENAI_API_KEY")
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY not set. Provide env var or CV_ADAPTER_OPENAI_API_KEY.")
-    return OpenAI(api_key=api_key)
+    is_authenticated = bool(getattr(request, "session", None) and request.session.get("user"))
+    if is_authenticated:
+        model = settings.premium_openai_model or "gpt-5-mini"
+    else:
+        model = settings.openai_model
+    return api_key, model
 
 
-def adapt_resume(resume_text: str, job_description: str, strategy: str | None = None) -> str:
-    client = _get_openai_client()
+def _get_openai_client(request: Optional[Request]) -> tuple[OpenAI, str]:
+    api_key, model = _select_credentials(request)
+    return OpenAI(api_key=api_key), model
+
+
+def _extract_text_from_response(response) -> Optional[str]:
+    # Try direct property
+    text = getattr(response, "output_text", None)
+    if isinstance(text, str) and text.strip():
+        return text.strip()
+
+    # Try Responses API typed objects
+    output = getattr(response, "output", None)
+    if output and isinstance(output, list):
+        chunks: list[str] = []
+        for item in output:
+            content = getattr(item, "content", None)
+            if content and isinstance(content, list):
+                for part in content:
+                    text_obj = getattr(part, "text", None)
+                    if text_obj is None and isinstance(part, dict):
+                        text_obj = part.get("text")
+                    if text_obj is not None:
+                        value = getattr(text_obj, "value", None)
+                        if value is None and isinstance(text_obj, dict):
+                            value = text_obj.get("value")
+                        if isinstance(value, str) and value:
+                            chunks.append(value)
+        if chunks:
+            joined = "".join(chunks).strip()
+            if joined:
+                return joined
+
+    # Fallback for Chat Completions shape
+    choices = getattr(response, "choices", None)
+    if choices:
+        first = choices[0] if len(choices) else None
+        message = getattr(first, "message", None)
+        content = getattr(message, "content", None)
+        if isinstance(content, str) and content.strip():
+            return content.strip()
+
+    return None
+
+
+def adapt_resume(resume_text: str, job_description: str, strategy: str | None = None, request: Optional[Request] = None) -> str:
+    client, model = _get_openai_client(request)
 
     system_prompt = (
         "You are an expert resume editor. You adapt a candidate's resume to a given job "
         "description while preserving truthful experience. Optimize for clarity, impact, and ATS keyword alignment. "
-        "Return clean plain text that can be pasted into a resume. Avoid hallucinating facts. Do not fabricate statements."
+        "Return clean plain text that can be pasted into a resume. You can use '*'s as basic markdown formatting for important information, but keep it minimal. "
+        "Avoid hallucinating facts. Do not fabricate statements."
     )
 
     user_prompt = (
@@ -35,17 +88,40 @@ def adapt_resume(resume_text: str, job_description: str, strategy: str | None = 
         "4) Keep the output as a resume sectioned text (Summary, Experience, Skills, Education)."
     )
 
-    response = client.chat.completions.create(
-        model=settings.openai_model,
-        temperature=settings.openai_temperature,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        max_tokens=settings.openai_max_output_tokens,
-    )
+    is_gpt5 = model.lower().startswith("gpt-5")
 
-    content = response.choices[0].message.content if response.choices else None
+    if is_gpt5:
+        # Prefer Responses API for gpt-5 models
+        input_text = f"System: {system_prompt}\n\nUser: {user_prompt}"
+        response = client.responses.create(
+            model=model,
+            input=input_text,
+            max_output_tokens=settings.openai_max_output_tokens,
+        )
+        content = _extract_text_from_response(response)
+        if not content:
+            # Fallback to Chat Completions without unsupported params
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+            )
+            content = _extract_text_from_response(response)
+    else:
+        # Use Chat Completions for other models
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            max_tokens=settings.openai_max_output_tokens,
+            temperature=settings.openai_temperature,
+        )
+        content = _extract_text_from_response(response)
+
     if not content:
         raise RuntimeError("OpenAI returned no content")
     return content.strip() 

@@ -4,16 +4,30 @@ from typing import Optional
 from fastapi import FastAPI, APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.sessions import SessionMiddleware
 
 from app.api.routes import router as api_router
+from app.api.auth_routes import router as auth_router
+from app.core.config import settings
 
 
 STATIC_DIR = Path(__file__).parent / "static"
 
 app = FastAPI(title="CV Adapter API", version="0.1.0")
 
+# Sessions (cookie-based, no DB)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.session_secret,
+    session_cookie=settings.cookie_name,
+    https_only=settings.cookie_secure,
+    same_site="lax",
+    domain=settings.cookie_domain,
+)
+
 # API routes under /api
 app.include_router(api_router, prefix="/api")
+app.include_router(auth_router, prefix="/api/auth")
 
 # Serve static frontend assets under /static
 if STATIC_DIR.exists():
@@ -24,6 +38,7 @@ if STATIC_DIR.exists():
 @app.get("/health")
 async def health_check():
     return {"status": "ok", "service": "cv-adapter"}
+
 
 def _read_index_html() -> Optional[str]:
     index_path = STATIC_DIR / "index.html"

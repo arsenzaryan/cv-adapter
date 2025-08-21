@@ -10,6 +10,7 @@ export async function adaptResume(payload: AdaptRequest): Promise<{ adapted_resu
     headers: {
       'Content-Type': 'application/json',
     },
+    credentials: 'include',
     body: JSON.stringify(payload),
   })
   if (!res.ok) {
@@ -32,6 +33,7 @@ export async function adaptResumeUpload(params: {
   const res = await fetch('/api/adapt-upload', {
     method: 'POST',
     body: form,
+    credentials: 'include',
   })
   if (!res.ok) {
     const text = await res.text().catch(() => '')
@@ -49,10 +51,25 @@ export async function generatePdf(params: { text: string; filename?: string; tit
   const res = await fetch('/api/pdf', {
     method: 'POST',
     body: form,
+    credentials: 'include',
   })
   if (!res.ok) {
     const text = await res.text().catch(() => '')
     throw new Error(text || `PDF request failed with ${res.status}`)
   }
   return res.blob()
+}
+
+export async function fetchMe(): Promise<{ authenticated: boolean; email?: string; name?: string; picture?: string }> {
+  const res = await fetch('/api/auth/me', { credentials: 'include' })
+  if (!res.ok) return { authenticated: false }
+  return res.json()
+}
+
+export function loginWithGoogle(): void {
+  window.location.href = '/api/auth/login/google'
+}
+
+export async function logout(): Promise<void> {
+  await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
 } 
